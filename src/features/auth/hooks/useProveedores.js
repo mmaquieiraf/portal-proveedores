@@ -10,7 +10,7 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     razonSocial: '', nombreFantasia: '', rut: '', domicilio: '',
     categoria: [], subcategoria: [], emailPrincipal: '', emailSecundario: '',
     contacto: '', cargo: '', telefono: '', zonasCobertura: [], terminos: false,
-    poseeWebsite: 'si', // INICIA POR DEFECTO EN SÍ
+    poseeWebsite: 'si',
     websiteUrl: ''
   });
 
@@ -25,6 +25,10 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
   const [filtroGestionCat, setFiltroGestionCat] = useState('');
   const [filtroGestionSub, setFiltroGestionSub] = useState('');
   const [filtroGestionZona, setFiltroGestionZona] = useState('');
+
+  // NUEVOS ESTADOS: Filtros exclusivos para la pestaña de Pendientes
+  const [filtroPendienteRutRazon, setFiltroPendienteRutRazon] = useState('');
+  const [filtroPendienteCatSubcat, setFiltroPendienteCatSubcat] = useState('');
 
   const cargarProveedores = async () => {
     const todosLosProveedores = await cargarProveedoresService();
@@ -101,7 +105,6 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     if (formData.subcategoria.length === 0) return alert("Debe seleccionar al menos una Subcategoría.");
     if (formData.zonasCobertura.length === 0) return alert("Debe seleccionar al menos una Zona de Cobertura.");
     
-    // Validación de Website (Solo exige el link si marca "Sí")
     if (formData.poseeWebsite === 'si' && formData.websiteUrl.trim() === '') {
       return alert("El enlace del sitio web es obligatorio al indicar que posee uno.");
     }
@@ -113,7 +116,6 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     const { data: existentes, error: rpcError } = await verificarDuplicadoProveedorService(rutLimpio);
     if (rpcError) console.error("Error al verificar duplicados:", rpcError);
 
-    // Formateo del Website: Si marca Sí, guarda el link. Si marca No, guarda "No posee".
     const websiteFinal = formData.poseeWebsite === 'si' 
       ? formData.websiteUrl.replace(/[<>]/g, '').trim().toLowerCase() 
       : 'No posee';
@@ -147,6 +149,7 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
   };
 
   const toggleSeleccion = (id) => setSeleccionados(seleccionados.includes(id) ? seleccionados.filter(i => i !== id) : [...seleccionados, id]);
+  
   const proveedoresAprobados = proveedores.filter(p => p.estado === 'Aprobado');
   const proveedoresFiltrados = proveedoresAprobados.filter(p => {
     const matchRut = p.rut.toLowerCase().includes(filtroRut.toLowerCase());
@@ -172,6 +175,18 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     return matchNombre && matchCat && matchSub && matchZona;
   });
 
+  // NUEVA LÓGICA: Filtra exclusivamente los pendientes usando los nuevos inputs
+  const proveedoresPendientesFiltrados = proveedores.filter(p => {
+    if (p.estado !== 'Pendiente') return false;
+    const infoIdentidad = `${p.rut} ${p.razon_social} ${p.nombre_fantasia}`.toLowerCase();
+    const infoCategoria = `${p.categoria} ${p.subcategoria}`.toLowerCase();
+    
+    const matchRutRazon = infoIdentidad.includes(filtroPendienteRutRazon.toLowerCase());
+    const matchCatSub = infoCategoria.includes(filtroPendienteCatSubcat.toLowerCase());
+    
+    return matchRutRazon && matchCatSub;
+  });
+
   return {
     proveedores, cargarProveedores, proveedorEditando, setProveedorEditando,
     formData, setFormData, filtroRut, setFiltroRut, filtroNombre, setFiltroNombre,
@@ -179,6 +194,12 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     filtroExportarZona, setFiltroExportarZona, seleccionados, setSeleccionados,
     filtroGestionNombre, setFiltroGestionNombre, filtroGestionCat, setFiltroGestionCat,
     filtroGestionSub, setFiltroGestionSub, filtroGestionZona, setFiltroGestionZona,
+    
+    // Exportamos los nuevos estados y arreglo filtrado
+    filtroPendienteRutRazon, setFiltroPendienteRutRazon,
+    filtroPendienteCatSubcat, setFiltroPendienteCatSubcat,
+    proveedoresPendientesFiltrados,
+
     aprobarProveedor, revocarProveedor, rechazarProveedor, abrirEditorProveedor,
     guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
     manejarCambioSubcategoria, manejarEnvioRegistro, toggleSeleccion,
