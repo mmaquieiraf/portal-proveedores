@@ -1,4 +1,4 @@
-iimport React from 'react';
+import React from 'react';
 
 export default function AdminPendientes({ 
   proveedoresPendientesFiltrados, // <-- Variable que viene del hook (ya filtrada)

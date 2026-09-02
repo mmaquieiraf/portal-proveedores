@@ -65,12 +65,19 @@ export default function App() {
     logsAuditoria, cargarLogsAuditoriaProv, cargarLogsAuditoria
   } = useAdmin(usuarioActual);
 
+  // EXTRAEMOS LOS NUEVOS PROPS DEL HOOK DE PROVEEDORES
   const {
     proveedores, cargarProveedores, proveedorEditando, setProveedorEditando, formData, setFormData,
     filtroRut, setFiltroRut, filtroNombre, setFiltroNombre, filtroCategoria, setFiltroCategoria,
     filtroSubcategoria, setFiltroSubcategoria, filtroExportarZona, setFiltroExportarZona, seleccionados, setSeleccionados,
     filtroGestionNombre, setFiltroGestionNombre, filtroGestionCat, setFiltroGestionCat,
     filtroGestionSub, setFiltroGestionSub, filtroGestionZona, setFiltroGestionZona,
+    
+    // Filtros de la pestaña pendientes que agregamos antes
+    filtroPendienteRutRazon, setFiltroPendienteRutRazon,
+    filtroPendienteCatSubcat, setFiltroPendienteCatSubcat,
+    proveedoresPendientesFiltrados,
+
     aprobarProveedor, revocarProveedor, rechazarProveedor, abrirEditorProveedor,
     guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
     manejarCambioSubcategoria, manejarEnvioRegistro, toggleSeleccion, proveedoresAprobados,
@@ -86,7 +93,7 @@ export default function App() {
     agregarProveedorAdjudicado, handleDetalleAdjudicacionChange, manejarCargaMasivaProcesos,
     controllersUnicos, mesesAnosUnicos, procesosFiltradosDashboard, totalBaselineProcesos,
     procesosRecuentoCount, countSpot, countAnualizado, ahorroTotalProcesos, ahorroPorcentajeProcesos,
-    procesosConAlertaFinalizacion, alertasContratos, alertasRenovacion
+    procesosConAlertaFinalizacion, alertasContratos, alertasRenovacion, totalMontoAdjudicadoKpi
   } = useProcesos(usuarioActual, proveedoresFiltrados, seleccionados, setTabAdmin);
 
   const {
@@ -188,11 +195,26 @@ export default function App() {
           <TabMenu tabAdmin={tabAdmin} setTabAdmin={setTabAdmin} usuarioActual={usuarioActual} cargarProcesos={cargarProcesos} cargarLogsAuditoria={cargarLogsAuditoria} setSeleccionados={setSeleccionados} />
           
           {tabAdmin === 'dashboard' && <DashboardStats proveedores={proveedores} proveedoresAprobados={proveedoresAprobados} categoriasDinamicas={categoriasDinamicas} />}
-          {tabAdmin === 'pendientes' && <AdminPendientes proveedores={proveedores} cargarProveedores={cargarProveedores} aprobarProveedor={aprobarProveedor} abrirEditorProveedor={abrirEditorProveedor} rechazarProveedor={rechazarProveedor} />}
+          
+          {/* SECCIÓN ACTUALIZADA CON LOS NUEVOS PROPS Y LA LISTA FILTRADA */}
+          {tabAdmin === 'pendientes' && (
+            <AdminPendientes 
+              proveedoresPendientesFiltrados={proveedoresPendientesFiltrados} 
+              cargarProveedores={cargarProveedores} 
+              aprobarProveedor={aprobarProveedor} 
+              abrirEditorProveedor={abrirEditorProveedor} 
+              rechazarProveedor={rechazarProveedor}
+              filtroPendienteRutRazon={filtroPendienteRutRazon}
+              setFiltroPendienteRutRazon={setFiltroPendienteRutRazon}
+              filtroPendienteCatSubcat={filtroPendienteCatSubcat}
+              setFiltroPendienteCatSubcat={setFiltroPendienteCatSubcat}
+            />
+          )}
+
           {tabAdmin === 'gestion' && <AdminGestion proveedoresGestionFiltrados={proveedoresGestionFiltrados} cargarProveedores={cargarProveedores} cargarLogsAuditoriaProv={cargarLogsAuditoriaProv} setMostrarModalAuditoria={setMostrarModalAuditoria} filtroGestionNombre={filtroGestionNombre} setFiltroGestionNombre={setFiltroGestionNombre} filtroGestionCat={filtroGestionCat} setFiltroGestionCat={setFiltroGestionCat} filtroGestionSub={filtroGestionSub} setFiltroGestionSub={setFiltroGestionSub} filtroGestionZona={filtroGestionZona} setFiltroGestionZona={setFiltroGestionZona} categoriasDinamicas={categoriasDinamicas} abrirEditorProveedor={abrirEditorProveedor} revocarProveedor={revocarProveedor} rechazarProveedor={rechazarProveedor} />}
           {tabAdmin === 'actualizacion_form' && <ConfiguracionDocs categoriasDinamicas={categoriasDinamicas} nuevaCatInput={nuevaCatInput} setNuevaCatInput={setNuevaCatInput} handleAgregarCategoria={handleAgregarCategoria} handleEliminarCategoria={handleEliminarCategoria} nuevasSubInputs={nuevasSubInputs} setNuevasSubInputs={setNuevasSubInputs} handleAgregarSubcategoria={handleAgregarSubcategoria} handleEliminarSubcategoria={handleEliminarSubcategoria} />}
           {tabAdmin === 'exportar' && <PanelExportar filtroRut={filtroRut} setFiltroRut={setFiltroRut} filtroNombre={filtroNombre} setFiltroNombre={setFiltroNombre} filtroCategoria={filtroCategoria} setFiltroCategoria={setFiltroCategoria} filtroSubcategoria={filtroSubcategoria} setFiltroSubcategoria={setFiltroSubcategoria} filtroExportarZona={filtroExportarZona} setFiltroExportarZona={setFiltroExportarZona} seleccionados={seleccionados} toggleSeleccion={toggleSeleccion} toggleSeleccionarTodo={toggleSeleccionarTodo} proveedoresFiltrados={proveedoresFiltrados} abrirNuevoProcesoConSeleccionados={abrirNuevoProcesoConSeleccionados} exportarCSV={() => exportarProveedoresCSV(proveedoresFiltrados.filter(p => seleccionados.includes(p.id)))} exportarExcel={() => exportarProveedoresExcel(proveedoresFiltrados.filter(p => seleccionados.includes(p.id)))} categoriasDinamicas={categoriasDinamicas} />}
-          {tabAdmin === 'procesos' && <PanelProcesos procesos={procesos} procesosFiltradosDashboard={procesosFiltradosDashboard} usuarioActual={usuarioActual} descargarPlantillaProcesos={descargarPlantillaProcesos} manejarCargaMasivaProcesos={manejarCargaMasivaProcesos} exportarProcesosExcel={() => exportarProcesosExcel(procesosFiltradosDashboard)} setProcesoActual={setProcesoActual} setModalProceso={setModalProceso} marcarAcuerdoFinalizado={marcarAcuerdoFinalizado} procesosConAlertaFinalizacion={procesosConAlertaFinalizacion} alertasContratos={alertasContratos} alertasRenovacion={alertasRenovacion} filtroProcesosController={filtroProcesosController} setFiltroProcesosController={setFiltroProcesosController} controllersUnicos={controllersUnicos} filtroProcesosEstado={filtroProcesosEstado} setFiltroProcesosEstado={setFiltroProcesosEstado} filtroProcesosMesAno={filtroProcesosMesAno} setFiltroProcesosMesAno={setFiltroProcesosMesAno} mesesAnosUnicos={mesesAnosUnicos} filtroDocsEmitidos={filtroDocsEmitidos} setFiltroDocsEmitidos={setFiltroDocsEmitidos} procesosRecuentoCount={procesosRecuentoCount} countSpot={countSpot} countAnualizado={countAnualizado} totalBaselineProcesos={totalBaselineProcesos} ahorroTotalProcesos={ahorroTotalProcesos} ahorroPorcentajeProcesos={ahorroPorcentajeProcesos} editarProceso={editarProceso} eliminarProceso={eliminarProceso} />}
+          {tabAdmin === 'procesos' && <PanelProcesos procesos={procesos} procesosFiltradosDashboard={procesosFiltradosDashboard} usuarioActual={usuarioActual} descargarPlantillaProcesos={descargarPlantillaProcesos} manejarCargaMasivaProcesos={manejarCargaMasivaProcesos} exportarProcesosExcel={() => exportarProcesosExcel(procesosFiltradosDashboard)} setProcesoActual={setProcesoActual} setModalProceso={setModalProceso} marcarAcuerdoFinalizado={marcarAcuerdoFinalizado} procesosConAlertaFinalizacion={procesosConAlertaFinalizacion} alertasContratos={alertasContratos} alertasRenovacion={alertasRenovacion} filtroProcesosController={filtroProcesosController} setFiltroProcesosController={setFiltroProcesosController} controllersUnicos={controllersUnicos} filtroProcesosEstado={filtroProcesosEstado} setFiltroProcesosEstado={setFiltroProcesosEstado} filtroProcesosMesAno={filtroProcesosMesAno} setFiltroProcesosMesAno={setFiltroProcesosMesAno} mesesAnosUnicos={mesesAnosUnicos} filtroDocsEmitidos={filtroDocsEmitidos} setFiltroDocsEmitidos={setFiltroDocsEmitidos} procesosRecuentoCount={procesosRecuentoCount} countSpot={countSpot} countAnualizado={countAnualizado} totalBaselineProcesos={totalBaselineProcesos} ahorroTotalProcesos={ahorroTotalProcesos} ahorroPorcentajeProcesos={ahorroPorcentajeProcesos} totalMontoAdjudicadoKpi={totalMontoAdjudicadoKpi} editarProceso={editarProceso} eliminarProceso={eliminarProceso} />}
           {tabAdmin === 'crear_admin' && <GestionUsuarios nuevoAdmin={nuevoAdmin} setNuevoAdmin={setNuevoAdmin} crearAdministrador={crearAdministrador} bloqueoSeguridad={bloqueoSeguridad} usuarioActual={usuarioActual} administradoresDb={administradoresDb} setAdminEditando={setAdminEditando} eliminarAdmin={eliminarAdmin} />}
           
           {tabAdmin === 'generador_rfp' && <GeneradorRFP />}
