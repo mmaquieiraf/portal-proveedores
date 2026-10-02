@@ -4,8 +4,10 @@ export default function Navbar({ usuarioActual, vista, setVista, setTabAdmin, se
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#004A99', padding: '15px 20px', borderRadius: '8px', color: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center' }}>
-        <img src="/logo.png" alt="Sodimac" style={{ height: '50px', objectFit: 'contain', transform: 'scale(2.8)', transformOrigin: 'left center', marginLeft: '5px' }} />
-        <span style={{ fontSize: '22px', fontWeight: '600', letterSpacing: '0.5px', zIndex: 10, marginLeft: '4cm' }}>Portal de Proveedores</span>
+        {/* Espacio reservado para mantener la altura original de 50px sin usar una imagen */}
+        <div style={{ height: '50px', display: 'flex', alignItems: 'center', marginLeft: '5px' }}>
+          <span style={{ fontSize: '24px', fontWeight: 'bold', letterSpacing: '0.5px', zIndex: 10 }}>Portal de Proveedores</span>
+        </div>
       </div>
       <div style={{ zIndex: 10, display: 'flex', alignItems: 'center', gap: '15px' }}>
         {usuarioActual && <span style={{ fontSize: '14px', color: '#cce5ff', borderRight: '1px solid rgba(255,255,255,0.3)', paddingRight: '15px' }}>👤 {usuarioActual.usuario}</span>}
