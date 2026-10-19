@@ -13,7 +13,7 @@ import { useAdmin } from './features/auth/hooks/useAdmin';
 // Servicios y Supabase
 import { signOutService } from './services/supabase/authService';
 import { exportarProcesosExcel, descargarPlantillaProcesos, exportarProveedoresCSV, exportarProveedoresExcel } from './services/export/excelExportService';
-import { supabase } from './supabase'; // IMPORTACIÓN AÑADIDA PARA SINCRONIZAR
+import { supabase } from './supabase';
 
 // Componentes
 import Navbar from './components/layout/Navbar';
@@ -44,7 +44,6 @@ export default function App() {
   const [mostrarTerminos, setMostrarTerminos] = useState(false);
   const [usuarioActual, setUsuarioActual] = useState(null);
 
-  // 1. Inicializa con compilado duro, pero se actualizará desde la nube enseguida
   const [categoriasDinamicas, setCategoriasDinamicas] = useState(categoriasSodimacCompiladas);
   const [nuevaCatInput, setNuevaCatInput] = useState('');
   const [nuevasSubInputs, setNuevasSubInputs] = useState({});
@@ -65,7 +64,6 @@ export default function App() {
     logsAuditoria, cargarLogsAuditoriaProv, cargarLogsAuditoria
   } = useAdmin(usuarioActual);
 
-  // EXTRAEMOS LOS PROPS DEL HOOK DE PROVEEDORES (INCLUYendo marcarProveedorActualizado)
   const {
     proveedores, cargarProveedores, proveedorEditando, setProveedorEditando, formData, setFormData,
     filtroRut, setFiltroRut, filtroNombre, setFiltroNombre, filtroCategoria, setFiltroCategoria,
@@ -77,7 +75,8 @@ export default function App() {
     filtroPendienteCatSubcat, setFiltroPendienteCatSubcat,
     proveedoresPendientesFiltrados,
 
-    aprobarProveedor, revocarProveedor, rechazarProveedor, marcarProveedorActualizado,
+    aprobarProveedor, revocarProveedor, rechazarProveedor,
+    marcarProveedorActualizado, marcarProveedoresActualizadosMasivo,
     abrirEditorProveedor, guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
     manejarCambioSubcategoria, manejarEnvioRegistro, toggleSeleccion, proveedoresAprobados,
     proveedoresFiltrados, toggleSeleccionarTodo, proveedoresGestionFiltrados
@@ -103,11 +102,6 @@ export default function App() {
     setVista, setUsuarioActual, cargarProveedores, cargarProcesos, cargarAdministradores
   });
 
-  // ===============================================================
-  // LÓGICA DE SINCRONIZACIÓN EN LA NUBE (REEMPLAZA A LOCALSTORAGE)
-  // ===============================================================
-
-  // A. Carga inicial desde Supabase al entrar a la página
   useEffect(() => {
     const fetchCategoriasNube = async () => {
       const { data, error } = await supabase
@@ -123,11 +117,9 @@ export default function App() {
     fetchCategoriasNube();
   }, []);
 
-  // B. Función para actualizar el estado y subir a la nube
   const sincronizarConNube = async (nuevasCategorias) => {
-    setCategoriasDinamicas(nuevasCategorias); // Actualiza UI de inmediato
+    setCategoriasDinamicas(nuevasCategorias);
     
-    // Impacta la nube para el resto de usuarios
     const { error } = await supabase
       .from('configuracion_sistema')
       .update({ categorias: nuevasCategorias })
@@ -139,7 +131,6 @@ export default function App() {
     }
   };
 
-  // C. Manejadores actualizados
   const handleAgregarCategoria = (e) => { 
     e.preventDefault(); 
     const cat = sanitizarYCapitalizar(nuevaCatInput); 
@@ -200,6 +191,7 @@ export default function App() {
               categoriasDinamicas={categoriasDinamicas}
               abrirEditorProveedor={abrirEditorProveedor}
               marcarProveedorActualizado={marcarProveedorActualizado}
+              marcarProveedoresActualizadosMasivo={marcarProveedoresActualizadosMasivo}
             />
           )}
           

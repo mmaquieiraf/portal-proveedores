@@ -68,12 +68,12 @@ export const cambiarEstadoProveedorService = async (id, estado, aprobado_por = n
   return await supabase.from('proveedores').update(payload).eq('id', id);
 };
 
-// NUEVO SERVICIO: Renueva la fecha del registro para sacarlo de la bandeja de >90 días
-export const marcarProveedorActualizadoService = async (id, fechaActual) => {
+// Actualiza TODOS los registros (todas las categorías/subcategorías) de uno o varios proveedores según su RUT
+export const marcarProveedoresActualizadosPorRutService = async (rutsArray, fechaActual) => {
   return await supabase
     .from('proveedores')
     .update({ fecha_registro: fechaActual })
-    .eq('id', id);
+    .in('rut', rutsArray);
 };
 
 export const eliminarProveedorService = async (id) => {

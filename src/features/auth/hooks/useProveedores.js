@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cargarProveedoresService, verificarDuplicadoProveedorService, insertarProveedoresService, actualizarProveedorService, cambiarEstadoProveedorService, marcarProveedorActualizadoService, eliminarProveedorService } from '../../../services/supabase/proveedoresService';
+import { cargarProveedoresService, verificarDuplicadoProveedorService, insertarProveedoresService, actualizarProveedorService, cambiarEstadoProveedorService, marcarProveedoresActualizadosPorRutService, eliminarProveedorService } from '../../../services/supabase/proveedoresService';
 import { registrarAuditoriaProvService } from '../../../services/supabase/auditoriaYAdminService';
 import { validarRUT, sanitizarYCapitalizar } from '../../../utils/formato';
 
@@ -62,21 +62,57 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     if (!error) { await registrarAuditoriaProvService(prov.rut, prov.razon_social, 'Eliminación', `Proveedor eliminado del sistema`, usuarioActual.usuario); cargarProveedores(); }
   };
 
-  // NUEVA FUNCIÓN: Marca al proveedor como actualizado y lo retira de la ventana de >90 días
+  // ACCIÓN INDIVIDUAL: Actualiza TODOS los registros (todas las categorías/subcategorías) del proveedor por su RUT
   const marcarProveedorActualizado = async (prov) => {
-    if(!window.confirm(`¿Confirmar que los datos de "${prov.razon_social}" (${prov.categoria} - ${prov.subcategoria}) están actualizados?`)) return;
-    const { error } = await marcarProveedorActualizadoService(prov.id, new Date().toISOString());
+    if(!window.confirm(`¿Confirmar que los datos de "${prov.razon_social}" (RUT: ${prov.rut}) están actualizados?\n\nSe actualizarán todas las categorías y subcategorías asociadas a este proveedor.`)) return;
+    const { error } = await marcarProveedoresActualizadosPorRutService([prov.rut], new Date().toISOString());
     if (!error) {
       await registrarAuditoriaProvService(
         prov.rut,
         prov.razon_social,
         'Actualización >90 días',
-        `Validado como actualizado (${prov.categoria} -> ${prov.subcategoria})`,
+        'Validado como actualizado en todas sus categorías y subcategorías',
         usuarioActual?.usuario || 'Admin'
       );
-      cargarProveedores();
+      await cargarProveedores();
     } else {
-      alert("⚠️ Ocurrió un error al marcar el registro como actualizado.");
+      alert("⚠️ Ocurrió un error al marcar el proveedor como actualizado.");
+    }
+  };
+
+  // ACCIÓN MASIVA: Actualiza TODOS los registros de los proveedores seleccionados (deduplicando por RUT)
+  const marcarProveedoresActualizadosMasivo = async (listaProveedoresSeleccionados) => {
+    if (!listaProveedoresSeleccionados || listaProveedoresSeleccionados.length === 0) {
+      return alert("⚠️ Seleccione al menos un registro.");
+    }
+
+    // Deduplicamos por RUT para identificar las empresas únicas
+    const mapaEmpresasPorRut = new Map();
+    listaProveedoresSeleccionados.forEach(p => {
+      if (p.rut && !mapaEmpresasPorRut.has(p.rut)) {
+        mapaEmpresasPorRut.set(p.rut, p);
+      }
+    });
+
+    const rutsUnicos = Array.from(mapaEmpresasPorRut.keys());
+    if (!window.confirm(`¿Marcar como actualizados todos los registros de ${rutsUnicos.length} proveedor(es) único(s)?\n\nEsto actualizará todas sus categorías y subcategorías asociadas.`)) return false;
+
+    const { error } = await marcarProveedoresActualizadosPorRutService(rutsUnicos, new Date().toISOString());
+    if (!error) {
+      for (const [, provUnico] of mapaEmpresasPorRut.entries()) {
+        await registrarAuditoriaProvService(
+          provUnico.rut,
+          provUnico.razon_social,
+          'Actualización >90 días (Masiva)',
+          'Validado como actualizado en todas sus categorías y subcategorías',
+          usuarioActual?.usuario || 'Admin'
+        );
+      }
+      await cargarProveedores();
+      return true;
+    } else {
+      alert("⚠️ Ocurrió un error al actualizar los proveedores seleccionados.");
+      return false;
     }
   };
 
@@ -255,7 +291,8 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     filtroPendienteCatSubcat, setFiltroPendienteCatSubcat,
     proveedoresPendientesFiltrados,
 
-    aprobarProveedor, revocarProveedor, rechazarProveedor, marcarProveedorActualizado,
+    aprobarProveedor, revocarProveedor, rechazarProveedor,
+    marcarProveedorActualizado, marcarProveedoresActualizadosMasivo,
     abrirEditorProveedor, guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
     manejarCambioSubcategoria, manejarEnvioRegistro, toggleSeleccion,
     proveedoresAprobados, proveedoresFiltrados, toggleSeleccionarTodo, proveedoresGestionFiltrados

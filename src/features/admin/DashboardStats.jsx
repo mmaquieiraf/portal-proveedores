@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { zonasOpciones, macroZonas, coloresGrafico } from '../../utils/constantes';
 import TortaDistribucion from '../../components/charts/TortaDistribucion';
 import MapaCobertura from '../../components/charts/MapaCobertura';
@@ -8,7 +8,8 @@ export default function DashboardStats({
   proveedoresAprobados, 
   categoriasDinamicas,
   abrirEditorProveedor,
-  marcarProveedorActualizado
+  marcarProveedorActualizado,
+  marcarProveedoresActualizadosMasivo
 }) {
   const [tipoGraficoTorta, setTipoGraficoTorta] = useState('categoria'); 
   const [filtroTortaCat, setFiltroTortaCat] = useState(''); 
@@ -23,6 +24,7 @@ export default function DashboardStats({
   // Estados para la ventana de proveedores que requieren actualización (>90 días)
   const [mostrarModalRenovacion, setMostrarModalRenovacion] = useState(false);
   const [busquedaRenovacion, setBusquedaRenovacion] = useState('');
+  const [seleccionadosRenovacion, setSeleccionadosRenovacion] = useState([]);
 
   const statsDashboard = () => {
     const total = proveedores.length; let fechasOrdenadas = []; const fechasRaw = {}; const renovaciones = [];
@@ -55,9 +57,51 @@ export default function DashboardStats({
   
   const stats = statsDashboard();
 
-  // Generador del enlace mailto con el texto exacto solicitado
-  const enviarCorreoConfirmacion = (prov) => {
-    const destinatario = prov.email_principal || '';
+  const renovacionesFiltradas = useMemo(() => {
+    return stats.renovaciones.filter(p => {
+      if (!busquedaRenovacion.trim()) return true;
+      const texto = `${p.razon_social || ''} ${p.nombre_fantasia || ''} ${p.rut || ''} ${p.categoria || ''} ${p.subcategoria || ''}`.toLowerCase();
+      return texto.includes(busquedaRenovacion.toLowerCase().trim());
+    });
+  }, [stats.renovaciones, busquedaRenovacion]);
+
+  // Registros actualmente marcados que están visibles en la tabla
+  const registrosSeleccionadosObjetos = useMemo(() => {
+    const setIds = new Set(seleccionadosRenovacion);
+    return stats.renovaciones.filter(p => setIds.has(p.id));
+  }, [stats.renovaciones, seleccionadosRenovacion]);
+
+  // Deduplicación de empresas seleccionadas por RUT (o razón social si no hubiera RUT)
+  const empresasUnicasSeleccionadas = useMemo(() => {
+    const mapaUnicos = new Map();
+    registrosSeleccionadosObjetos.forEach(p => {
+      const claveEmpresa = (p.rut || p.razon_social || p.email_principal || '').toString().trim().toLowerCase();
+      if (claveEmpresa && !mapaUnicos.has(claveEmpresa)) {
+        mapaUnicos.set(claveEmpresa, p);
+      }
+    });
+    return Array.from(mapaUnicos.values());
+  }, [registrosSeleccionadosObjetos]);
+
+  const todosVisiblesMarcados = renovacionesFiltradas.length > 0 && renovacionesFiltradas.every(p => seleccionadosRenovacion.includes(p.id));
+
+  const toggleSeleccionRenovacion = (id) => {
+    setSeleccionadosRenovacion(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+  };
+
+  const toggleSeleccionarTodosRenovacion = (e) => {
+    if (e.target.checked) {
+      const idsVisibles = renovacionesFiltradas.map(p => p.id);
+      setSeleccionadosRenovacion(prev => Array.from(new Set([...prev, ...idsVisibles])));
+    } else {
+      const idsVisiblesSet = new Set(renovacionesFiltradas.map(p => p.id));
+      setSeleccionadosRenovacion(prev => prev.filter(id => !idsVisiblesSet.has(id)));
+    }
+  };
+
+  // Construye y abre el mailto para un proveedor único
+  const abrirClienteCorreoProveedor = (prov) => {
+    const destinatario = (prov.email_principal || '').trim();
     const asunto = encodeURIComponent('Confirmación y actualización de datos - Portal de Proveedores');
     const cuerpo = encodeURIComponent(
 `Estimado proveedor: 
@@ -69,14 +113,40 @@ Favor confirmar si esta información esta correcta.
 
 Saludos,`
     );
-    window.location.href = `mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
+    const link = document.createElement('a');
+    link.href = `mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  const renovacionesFiltradas = stats.renovaciones.filter(p => {
-    if (!busquedaRenovacion.trim()) return true;
-    const texto = `${p.razon_social || ''} ${p.nombre_fantasia || ''} ${p.rut || ''} ${p.categoria || ''} ${p.subcategoria || ''}`.toLowerCase();
-    return texto.includes(busquedaRenovacion.toLowerCase().trim());
-  });
+  // Envío de correo desde botón de Selección Múltiple (deduplicado por empresa)
+  const manejarEnviarCorreoMasivo = () => {
+    if (empresasUnicasSeleccionadas.length === 0) {
+      return alert("⚠️ Seleccione al menos un proveedor de la lista.");
+    }
+
+    // Si se seleccionaron múltiples filas que pertenecen a la misma empresa (diferentes categorías/subcategorías),
+    // empresasUnicasSeleccionadas tendrá longitud 1 y enviará un único correo.
+    empresasUnicasSeleccionadas.forEach((provUnico, index) => {
+      setTimeout(() => {
+        abrirClienteCorreoProveedor(provUnico);
+      }, index * 350);
+    });
+  };
+
+  // Actualización masiva de todos los registros de las empresas seleccionadas
+  const manejarActualizadoMasivo = async () => {
+    if (registrosSeleccionadosObjetos.length === 0) {
+      return alert("⚠️ Seleccione al menos un proveedor de la lista.");
+    }
+    if (marcarProveedoresActualizadosMasivo) {
+      const exito = await marcarProveedoresActualizadosMasivo(registrosSeleccionadosObjetos);
+      if (exito) {
+        setSeleccionadosRenovacion([]);
+      }
+    }
+  };
 
   const chartWidth = 800; const chartHeight = 250; const padX = 40; const padY = 30;
   const maxReg = Math.max(...stats.fechasOrdenadas.map(f => stats.fechasRaw[f]), 1);
@@ -133,7 +203,8 @@ Saludos,`
               </button>
             </div>
 
-            <div style={{ marginBottom: '15px' }}>
+            {/* BARRA SUPERIOR: BUSCADOR + ACCIONES DE SELECCIÓN MÚLTIPLE (SOLO ACTUALIZADO Y ENVIAR CORREO) */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '15px', marginBottom: '15px', flexWrap: 'wrap' }}>
               <input 
                 type="text" 
                 placeholder="🔍 Filtrar por Razón Social, RUT o Categoría..." 
@@ -141,12 +212,40 @@ Saludos,`
                 onChange={(e) => setBusquedaRenovacion(e.target.value)}
                 style={{ width: '100%', maxWidth: '380px', padding: '8px 12px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '12px', outline: 'none' }}
               />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '12px', color: '#004A99', fontWeight: 'bold' }}>
+                  Seleccionados: {registrosSeleccionadosObjetos.length} reg. ({empresasUnicasSeleccionadas.length} {empresasUnicasSeleccionadas.length === 1 ? 'empresa única' : 'empresas únicas'})
+                </span>
+                <button
+                  onClick={manejarActualizadoMasivo}
+                  disabled={registrosSeleccionadosObjetos.length === 0}
+                  style={{ padding: '7px 14px', backgroundColor: registrosSeleccionadosObjetos.length === 0 ? '#94d3a2' : '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: registrosSeleccionadosObjetos.length === 0 ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                >
+                  Actualizado ({empresasUnicasSeleccionadas.length})
+                </button>
+                <button
+                  onClick={manejarEnviarCorreoMasivo}
+                  disabled={empresasUnicasSeleccionadas.length === 0}
+                  style={{ padding: '7px 14px', backgroundColor: empresasUnicasSeleccionadas.length === 0 ? '#7abaff' : '#004A99', color: 'white', border: 'none', borderRadius: '4px', cursor: empresasUnicasSeleccionadas.length === 0 ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                >
+                  Enviar Correo ({empresasUnicasSeleccionadas.length})
+                </button>
+              </div>
             </div>
 
             <div style={{ overflowY: 'auto', border: '1px solid #ccc', borderRadius: '6px', flex: 1 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f0f0f0', zIndex: 1 }}>
                   <tr style={{ textAlign: 'left' }}>
+                    <th style={{ padding: '10px', borderBottom: '2px solid #ccc', width: '36px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={todosVisiblesMarcados} 
+                        onChange={toggleSeleccionarTodosRenovacion} 
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
                     <th style={{ padding: '10px', borderBottom: '2px solid #ccc' }}>Fecha Registro</th>
                     <th style={{ padding: '10px', borderBottom: '2px solid #ccc' }}>Razón Social / RUT</th>
                     <th style={{ padding: '10px', borderBottom: '2px solid #ccc' }}>Categoría / Subcategoría</th>
@@ -157,52 +256,63 @@ Saludos,`
                 <tbody>
                   {renovacionesFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan="5" style={{ padding: '25px', textAlign: 'center', color: '#777' }}>
+                      <td colSpan="6" style={{ padding: '25px', textAlign: 'center', color: '#777' }}>
                         No hay proveedores pendientes de actualización (&gt;90 días).
                       </td>
                     </tr>
                   ) : (
-                    renovacionesFiltradas.map(prov => (
-                      <tr key={prov.id} style={{ borderBottom: '1px solid #eee' }}>
-                        <td style={{ padding: '10px', color: '#666' }}>
-                          {prov.fecha_registro ? new Date(prov.fecha_registro).toLocaleDateString('es-CL') : 'N/A'}
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <strong style={{ color: '#222' }}>{prov.razon_social}</strong><br />
-                          <span style={{ color: '#666', fontSize: '11px' }}>{prov.rut}</span>
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <span>{prov.categoria}</span><br />
-                          <span style={{ color: '#666', fontSize: '11px' }}>{prov.subcategoria}</span>
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <strong>{prov.nombre_contacto || 'Sin nombre'}</strong><br />
-                          <span style={{ color: '#004A99', fontSize: '11px' }}>{prov.email_principal || 'Sin correo'}</span>
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                            <button 
-                              onClick={() => marcarProveedorActualizado && marcarProveedorActualizado(prov)} 
-                              style={{ padding: '5px 10px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                            >
-                              Actualizado
-                            </button>
-                            <button 
-                              onClick={() => enviarCorreoConfirmacion(prov)} 
-                              style={{ padding: '5px 10px', backgroundColor: '#004A99', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                            >
-                              Enviar Correo
-                            </button>
-                            <button 
-                              onClick={() => abrirEditorProveedor && abrirEditorProveedor(prov)} 
-                              style={{ padding: '5px 10px', backgroundColor: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                            >
-                              Editar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    renovacionesFiltradas.map(prov => {
+                      const estaSeleccionado = seleccionadosRenovacion.includes(prov.id);
+                      return (
+                        <tr key={prov.id} style={{ borderBottom: '1px solid #eee', backgroundColor: estaSeleccionado ? '#f0f8ff' : 'white' }}>
+                          <td style={{ padding: '10px', textAlign: 'center' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={estaSeleccionado} 
+                              onChange={() => toggleSeleccionRenovacion(prov.id)} 
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </td>
+                          <td style={{ padding: '10px', color: '#666' }}>
+                            {prov.fecha_registro ? new Date(prov.fecha_registro).toLocaleDateString('es-CL') : 'N/A'}
+                          </td>
+                          <td style={{ padding: '10px' }}>
+                            <strong style={{ color: '#222' }}>{prov.razon_social}</strong><br />
+                            <span style={{ color: '#666', fontSize: '11px' }}>{prov.rut}</span>
+                          </td>
+                          <td style={{ padding: '10px' }}>
+                            <span>{prov.categoria}</span><br />
+                            <span style={{ color: '#666', fontSize: '11px' }}>{prov.subcategoria}</span>
+                          </td>
+                          <td style={{ padding: '10px' }}>
+                            <strong>{prov.nombre_contacto || 'Sin nombre'}</strong><br />
+                            <span style={{ color: '#004A99', fontSize: '11px' }}>{prov.email_principal || 'Sin correo'}</span>
+                          </td>
+                          <td style={{ padding: '10px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                              <button 
+                                onClick={() => marcarProveedorActualizado && marcarProveedorActualizado(prov)} 
+                                style={{ padding: '5px 10px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                              >
+                                Actualizado
+                              </button>
+                              <button 
+                                onClick={() => abrirClienteCorreoProveedor(prov)} 
+                                style={{ padding: '5px 10px', backgroundColor: '#004A99', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                              >
+                                Enviar Correo
+                              </button>
+                              <button 
+                                onClick={() => abrirEditorProveedor && abrirEditorProveedor(prov)} 
+                                style={{ padding: '5px 10px', backgroundColor: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                              >
+                                Editar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -220,7 +330,6 @@ Saludos,`
           <h3 style={{ margin: '0', fontSize: '14px', textTransform: 'uppercase' }}>Aprobados en Base</h3>
           <p style={{ margin: '10px 0 0 0', fontSize: '36px', fontWeight: 'bold' }}>{proveedoresAprobados.length}</p>
         </div>
-        {/* TARJETA INTERACTIVA: Al hacer clic abre el listado de proveedores >90 días */}
         <div 
           onClick={() => setMostrarModalRenovacion(true)}
           title="Haz clic para revisar los proveedores que requieren actualización"
