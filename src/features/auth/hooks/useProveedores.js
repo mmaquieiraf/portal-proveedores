@@ -3,6 +3,17 @@ import { cargarProveedoresService, verificarDuplicadoProveedorService, insertarP
 import { registrarAuditoriaProvService } from '../../../services/supabase/auditoriaYAdminService';
 import { validarRUT, sanitizarYCapitalizar } from '../../../utils/formato';
 
+// Función auxiliar interna para comparar textos sin perder registros por tildes, mayúsculas o espacios
+const normalizarComparacion = (texto) => {
+  if (!texto) return '';
+  return texto
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+};
+
 export const useProveedores = (usuarioActual, categoriasDinamicas) => {
   const [proveedores, setProveedores] = useState([]);
   const [proveedorEditando, setProveedorEditando] = useState(null);
@@ -26,7 +37,7 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
   const [filtroGestionSub, setFiltroGestionSub] = useState('');
   const [filtroGestionZona, setFiltroGestionZona] = useState('');
 
-  // NUEVOS ESTADOS: Filtros exclusivos para la pestaña de Pendientes
+  // Estados de filtros exclusivos para la pestaña de Pendientes
   const [filtroPendienteRutRazon, setFiltroPendienteRutRazon] = useState('');
   const [filtroPendienteCatSubcat, setFiltroPendienteCatSubcat] = useState('');
 
@@ -87,7 +98,11 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     else {
       nuevasCat = nuevasCat.filter(c => c !== cat);
       const subsParaRemover = categoriasDinamicas[cat] || [];
-      nuevasSub = nuevasSub.filter(s => !subsParaRemover.includes(s));
+      // Solo removemos la subcategoría si no pertenece a otra categoría que siga marcada
+      nuevasSub = nuevasSub.filter(s => {
+        if (!subsParaRemover.includes(s)) return true;
+        return nuevasCat.some(otraCat => (categoriasDinamicas[otraCat] || []).includes(s));
+      });
     }
     setFormData({ ...formData, categoria: nuevasCat, subcategoria: nuevasSub });
   };
@@ -123,22 +138,40 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     const registrosAInsertar = [];
     const duplicadosEncontrados = [];
 
+    // Buscamos la categoría padre exclusivamente dentro de las categorías seleccionadas por el proveedor
     formData.subcategoria.forEach(sub => {
-      const catAsociada = Object.keys(categoriasDinamicas).find(key => categoriasDinamicas[key].includes(sub));
-      const yaExiste = existentes?.some(ex => ex.categoria === catAsociada && ex.subcategoria === sub);
-      if (yaExiste) duplicadosEncontrados.push(`${catAsociada} -> ${sub}`);
-      else {
-        registrosAInsertar.push({
-          razon_social: sanitizarYCapitalizar(formData.razonSocial), nombre_fantasia: sanitizarYCapitalizar(formData.nombreFantasia),
-          rut: rutLimpio, domicilio_comercial: sanitizarYCapitalizar(formData.domicilio),
-          categoria: catAsociada, subcategoria: sub,       
-          email_principal: formData.emailPrincipal.replace(/[<>]/g, '').toLowerCase().trim(), 
-          email_secundario: formData.emailSecundario ? formData.emailSecundario.replace(/[<>]/g, '').toLowerCase().trim() : '',
-          nombre_contacto: sanitizarYCapitalizar(formData.contacto), cargo: sanitizarYCapitalizar(formData.cargo),
-          telefono: formData.telefono.replace(/[<>]/g, '').trim(), zonas_cobertura: zonasFinales.join(', '), 
-          website: websiteFinal, terminos_aceptados: formData.terminos, estado: 'Pendiente'
-        });
-      }
+      const categoriasCoincidentes = formData.categoria.filter(cat => (categoriasDinamicas[cat] || []).includes(sub));
+      const categoriasFinales = categoriasCoincidentes.length > 0 
+        ? categoriasCoincidentes 
+        : [Object.keys(categoriasDinamicas).find(key => (categoriasDinamicas[key] || []).includes(sub))].filter(Boolean);
+
+      categoriasFinales.forEach(catAsociada => {
+        const yaExiste = existentes?.some(ex => 
+          normalizarComparacion(ex.categoria) === normalizarComparacion(catAsociada) && 
+          normalizarComparacion(ex.subcategoria) === normalizarComparacion(sub)
+        );
+        if (yaExiste) {
+          duplicadosEncontrados.push(`${catAsociada} -> ${sub}`);
+        } else {
+          registrosAInsertar.push({
+            razon_social: sanitizarYCapitalizar(formData.razonSocial),
+            nombre_fantasia: sanitizarYCapitalizar(formData.nombreFantasia),
+            rut: rutLimpio,
+            domicilio_comercial: sanitizarYCapitalizar(formData.domicilio),
+            categoria: catAsociada,
+            subcategoria: sub,       
+            email_principal: formData.emailPrincipal.replace(/[<>]/g, '').toLowerCase().trim(), 
+            email_secundario: formData.emailSecundario ? formData.emailSecundario.replace(/[<>]/g, '').toLowerCase().trim() : '',
+            nombre_contacto: sanitizarYCapitalizar(formData.contacto),
+            cargo: sanitizarYCapitalizar(formData.cargo),
+            telefono: formData.telefono.replace(/[<>]/g, '').trim(),
+            zonas_cobertura: zonasFinales.join(', '), 
+            website: websiteFinal,
+            terminos_aceptados: formData.terminos,
+            estado: 'Pendiente'
+          });
+        }
+      });
     });
 
     if (duplicadosEncontrados.length > 0) { alert(`❌ ATENCIÓN: El RUT ya se encuentra registrado para las siguientes subcategorías:\n\n${duplicadosEncontrados.join('\n')}\n\nPor favor, desmárquelas para poder continuar.`); return; }
@@ -150,16 +183,27 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
 
   const toggleSeleccion = (id) => setSeleccionados(seleccionados.includes(id) ? seleccionados.filter(i => i !== id) : [...seleccionados, id]);
   
-  const proveedoresAprobados = proveedores.filter(p => p.estado === 'Aprobado');
+  // Garantiza que ningún proveedor aprobado quede excluido por espacios o mayúsculas en el campo estado
+  const proveedoresAprobados = proveedores.filter(p => normalizarComparacion(p.estado) === 'aprobado');
+
+  // Filtrado exacto normalizado para Exportar Aprobados
   const proveedoresFiltrados = proveedoresAprobados.filter(p => {
-    const matchRut = p.rut.toLowerCase().includes(filtroRut.toLowerCase());
-    const matchNombre = p.nombre_fantasia.toLowerCase().includes(filtroNombre.toLowerCase());
-    const matchCat = filtroCategoria === '' || p.categoria === filtroCategoria;
-    const matchSub = filtroSubcategoria === '' || p.subcategoria === filtroSubcategoria;
+    const rutProv = normalizarComparacion(p.rut);
+    const nombreProv = `${normalizarComparacion(p.nombre_fantasia)} ${normalizarComparacion(p.razon_social)}`;
+    const catProv = normalizarComparacion(p.categoria);
+    const subProv = normalizarComparacion(p.subcategoria);
+
+    const matchRut = filtroRut.trim() === '' || rutProv.includes(normalizarComparacion(filtroRut));
+    const matchNombre = filtroNombre.trim() === '' || nombreProv.includes(normalizarComparacion(filtroNombre));
+    const matchCat = filtroCategoria === '' || catProv === normalizarComparacion(filtroCategoria);
+    const matchSub = filtroSubcategoria === '' || subProv === normalizarComparacion(filtroSubcategoria);
+
     let matchZona = true;
     if (filtroExportarZona.length > 0) {
-      const zProv = p.zonas_cobertura ? p.zonas_cobertura.split(',').map(z => z.trim()) : [];
-      matchZona = filtroExportarZona.some(fz => zProv.includes(fz) || zProv.includes('Todo el País'));
+      const zProv = p.zonas_cobertura ? p.zonas_cobertura.split(',').map(z => normalizarComparacion(z)) : [];
+      matchZona = filtroExportarZona.some(fz => 
+        zProv.includes(normalizarComparacion(fz)) || zProv.includes(normalizarComparacion('Todo el País'))
+      );
     }
     return matchRut && matchNombre && matchCat && matchSub && matchZona;
   });
@@ -167,22 +211,23 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
   const toggleSeleccionarTodo = (e) => setSeleccionados(e.target.checked ? proveedoresFiltrados.map(p => p.id) : []);
 
   const proveedoresGestionFiltrados = proveedores.filter(p => {
-    if (p.estado !== 'Aprobado') return false;
-    const matchNombre = p.nombre_fantasia.toLowerCase().includes(filtroGestionNombre.toLowerCase()) || p.razon_social.toLowerCase().includes(filtroGestionNombre.toLowerCase());
-    const matchCat = filtroGestionCat === '' || p.categoria === filtroGestionCat;
-    const matchSub = filtroGestionSub === '' || p.subcategoria === filtroGestionSub;
-    const matchZona = p.zonas_cobertura ? p.zonas_cobertura.toLowerCase().includes(filtroGestionZona.toLowerCase()) : true;
+    if (normalizarComparacion(p.estado) !== 'aprobado') return false;
+    const textoEmpresa = `${normalizarComparacion(p.nombre_fantasia)} ${normalizarComparacion(p.razon_social)} ${normalizarComparacion(p.rut)}`;
+    const matchNombre = filtroGestionNombre.trim() === '' || textoEmpresa.includes(normalizarComparacion(filtroGestionNombre));
+    const matchCat = filtroGestionCat === '' || normalizarComparacion(p.categoria) === normalizarComparacion(filtroGestionCat);
+    const matchSub = filtroGestionSub === '' || normalizarComparacion(p.subcategoria) === normalizarComparacion(filtroGestionSub);
+    const matchZona = filtroGestionZona === '' || (p.zonas_cobertura ? normalizarComparacion(p.zonas_cobertura).includes(normalizarComparacion(filtroGestionZona)) : true);
     return matchNombre && matchCat && matchSub && matchZona;
   });
 
-  // NUEVA LÓGICA: Filtra exclusivamente los pendientes usando los nuevos inputs
+  // Filtra exclusivamente los pendientes usando los inputs múltiples
   const proveedoresPendientesFiltrados = proveedores.filter(p => {
-    if (p.estado !== 'Pendiente') return false;
-    const infoIdentidad = `${p.rut} ${p.razon_social} ${p.nombre_fantasia}`.toLowerCase();
-    const infoCategoria = `${p.categoria} ${p.subcategoria}`.toLowerCase();
+    if (normalizarComparacion(p.estado) !== 'pendiente') return false;
+    const infoIdentidad = `${normalizarComparacion(p.rut)} ${normalizarComparacion(p.razon_social)} ${normalizarComparacion(p.nombre_fantasia)}`;
+    const infoCategoria = `${normalizarComparacion(p.categoria)} ${normalizarComparacion(p.subcategoria)}`;
     
-    const matchRutRazon = infoIdentidad.includes(filtroPendienteRutRazon.toLowerCase());
-    const matchCatSub = infoCategoria.includes(filtroPendienteCatSubcat.toLowerCase());
+    const matchRutRazon = infoIdentidad.includes(normalizarComparacion(filtroPendienteRutRazon));
+    const matchCatSub = infoCategoria.includes(normalizarComparacion(filtroPendienteCatSubcat));
     
     return matchRutRazon && matchCatSub;
   });
@@ -195,7 +240,6 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     filtroGestionNombre, setFiltroGestionNombre, filtroGestionCat, setFiltroGestionCat,
     filtroGestionSub, setFiltroGestionSub, filtroGestionZona, setFiltroGestionZona,
     
-    // Exportamos los nuevos estados y arreglo filtrado
     filtroPendienteRutRazon, setFiltroPendienteRutRazon,
     filtroPendienteCatSubcat, setFiltroPendienteCatSubcat,
     proveedoresPendientesFiltrados,

@@ -11,8 +11,9 @@ export const cargarProveedoresService = async () => {
     const { data, error } = await supabase
       .from('proveedores')
       .select('*')
-      .range(desde, hasta)
-      .order('fecha_registro', { ascending: false });
+      .order('fecha_registro', { ascending: false })
+      .order('id', { ascending: true }) // Desempate determinista para no omitir ni duplicar filas entre páginas de 1000
+      .range(desde, hasta);
 
     if (error) {
       console.error("Error al cargar proveedores:", error);
