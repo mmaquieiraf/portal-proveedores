@@ -65,7 +65,7 @@ export default function App() {
     logsAuditoria, cargarLogsAuditoriaProv, cargarLogsAuditoria
   } = useAdmin(usuarioActual);
 
-  // EXTRAEMOS LOS NUEVOS PROPS DEL HOOK DE PROVEEDORES
+  // EXTRAEMOS LOS PROPS DEL HOOK DE PROVEEDORES (INCLUYendo marcarProveedorActualizado)
   const {
     proveedores, cargarProveedores, proveedorEditando, setProveedorEditando, formData, setFormData,
     filtroRut, setFiltroRut, filtroNombre, setFiltroNombre, filtroCategoria, setFiltroCategoria,
@@ -73,13 +73,12 @@ export default function App() {
     filtroGestionNombre, setFiltroGestionNombre, filtroGestionCat, setFiltroGestionCat,
     filtroGestionSub, setFiltroGestionSub, filtroGestionZona, setFiltroGestionZona,
     
-    // Filtros de la pestaña pendientes que agregamos antes
     filtroPendienteRutRazon, setFiltroPendienteRutRazon,
     filtroPendienteCatSubcat, setFiltroPendienteCatSubcat,
     proveedoresPendientesFiltrados,
 
-    aprobarProveedor, revocarProveedor, rechazarProveedor, abrirEditorProveedor,
-    guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
+    aprobarProveedor, revocarProveedor, rechazarProveedor, marcarProveedorActualizado,
+    abrirEditorProveedor, guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
     manejarCambioSubcategoria, manejarEnvioRegistro, toggleSeleccion, proveedoresAprobados,
     proveedoresFiltrados, toggleSeleccionarTodo, proveedoresGestionFiltrados
   } = useProveedores(usuarioActual, categoriasDinamicas);
@@ -194,9 +193,16 @@ export default function App() {
         <div style={{ maxWidth: '1200px', margin: '0 auto', backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
           <TabMenu tabAdmin={tabAdmin} setTabAdmin={setTabAdmin} usuarioActual={usuarioActual} cargarProcesos={cargarProcesos} cargarLogsAuditoria={cargarLogsAuditoria} setSeleccionados={setSeleccionados} />
           
-          {tabAdmin === 'dashboard' && <DashboardStats proveedores={proveedores} proveedoresAprobados={proveedoresAprobados} categoriasDinamicas={categoriasDinamicas} />}
+          {tabAdmin === 'dashboard' && (
+            <DashboardStats 
+              proveedores={proveedores} 
+              proveedoresAprobados={proveedoresAprobados} 
+              categoriasDinamicas={categoriasDinamicas}
+              abrirEditorProveedor={abrirEditorProveedor}
+              marcarProveedorActualizado={marcarProveedorActualizado}
+            />
+          )}
           
-          {/* SECCIÓN ACTUALIZADA CON LOS NUEVOS PROPS Y LA LISTA FILTRADA */}
           {tabAdmin === 'pendientes' && (
             <AdminPendientes 
               proveedoresPendientesFiltrados={proveedoresPendientesFiltrados} 

@@ -3,7 +3,13 @@ import { zonasOpciones, macroZonas, coloresGrafico } from '../../utils/constante
 import TortaDistribucion from '../../components/charts/TortaDistribucion';
 import MapaCobertura from '../../components/charts/MapaCobertura';
 
-export default function DashboardStats({ proveedores, proveedoresAprobados, categoriasDinamicas }) {
+export default function DashboardStats({ 
+  proveedores, 
+  proveedoresAprobados, 
+  categoriasDinamicas,
+  abrirEditorProveedor,
+  marcarProveedorActualizado
+}) {
   const [tipoGraficoTorta, setTipoGraficoTorta] = useState('categoria'); 
   const [filtroTortaCat, setFiltroTortaCat] = useState(''); 
   const [filtroTortaSub, setFiltroTortaSub] = useState([]); 
@@ -13,6 +19,10 @@ export default function DashboardStats({ proveedores, proveedoresAprobados, cate
   const [filtroMapaCat, setFiltroMapaCat] = useState(''); 
   const [filtroMapaSub, setFiltroMapaSub] = useState(''); 
   const [filtroMapaZona, setFiltroMapaZona] = useState('');
+
+  // Estados para la ventana de proveedores que requieren actualización (>90 días)
+  const [mostrarModalRenovacion, setMostrarModalRenovacion] = useState(false);
+  const [busquedaRenovacion, setBusquedaRenovacion] = useState('');
 
   const statsDashboard = () => {
     const total = proveedores.length; let fechasOrdenadas = []; const fechasRaw = {}; const renovaciones = [];
@@ -44,6 +54,29 @@ export default function DashboardStats({ proveedores, proveedoresAprobados, cate
   };
   
   const stats = statsDashboard();
+
+  // Generador del enlace mailto con el texto exacto solicitado
+  const enviarCorreoConfirmacion = (prov) => {
+    const destinatario = prov.email_principal || '';
+    const asunto = encodeURIComponent('Confirmación y actualización de datos - Portal de Proveedores');
+    const cuerpo = encodeURIComponent(
+`Estimado proveedor: 
+
+Dentro de nuestra base de proveedores contamos con la siguiente informacion de contacto de su empresa: 
+${prov.razon_social || ''} - ${prov.rut || ''} - ${prov.nombre_contacto || ''} - ${prov.email_principal || ''}. 
+
+Favor confirmar si esta información esta correcta. 
+
+Saludos,`
+    );
+    window.location.href = `mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
+  };
+
+  const renovacionesFiltradas = stats.renovaciones.filter(p => {
+    if (!busquedaRenovacion.trim()) return true;
+    const texto = `${p.razon_social || ''} ${p.nombre_fantasia || ''} ${p.rut || ''} ${p.categoria || ''} ${p.subcategoria || ''}`.toLowerCase();
+    return texto.includes(busquedaRenovacion.toLowerCase().trim());
+  });
 
   const chartWidth = 800; const chartHeight = 250; const padX = 40; const padY = 30;
   const maxReg = Math.max(...stats.fechasOrdenadas.map(f => stats.fechasRaw[f]), 1);
@@ -83,6 +116,101 @@ export default function DashboardStats({ proveedores, proveedoresAprobados, cate
 
   return (
     <div>
+      {/* MODAL EMERGENTE: PROVEEDORES QUE REQUIEREN ACTUALIZACIÓN (>90 DÍAS) */}
+      {mostrarModalRenovacion && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 900 }}>
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '8px', width: '92%', maxWidth: '1050px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #ffc107', paddingBottom: '12px', marginBottom: '15px' }}>
+              <div>
+                <h3 style={{ margin: 0, color: '#333', fontSize: '18px' }}>Proveedores que Requieren Actualización (&gt;90 días)</h3>
+                <span style={{ fontSize: '12px', color: '#666' }}>Total pendientes de revisión: <strong>{stats.renovaciones.length}</strong> registros</span>
+              </div>
+              <button 
+                onClick={() => setMostrarModalRenovacion(false)} 
+                style={{ padding: '6px 12px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <input 
+                type="text" 
+                placeholder="🔍 Filtrar por Razón Social, RUT o Categoría..." 
+                value={busquedaRenovacion}
+                onChange={(e) => setBusquedaRenovacion(e.target.value)}
+                style={{ width: '100%', maxWidth: '380px', padding: '8px 12px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '12px', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ overflowY: 'auto', border: '1px solid #ccc', borderRadius: '6px', flex: 1 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f0f0f0', zIndex: 1 }}>
+                  <tr style={{ textAlign: 'left' }}>
+                    <th style={{ padding: '10px', borderBottom: '2px solid #ccc' }}>Fecha Registro</th>
+                    <th style={{ padding: '10px', borderBottom: '2px solid #ccc' }}>Razón Social / RUT</th>
+                    <th style={{ padding: '10px', borderBottom: '2px solid #ccc' }}>Categoría / Subcategoría</th>
+                    <th style={{ padding: '10px', borderBottom: '2px solid #ccc' }}>Contacto / Correo</th>
+                    <th style={{ padding: '10px', borderBottom: '2px solid #ccc', textAlign: 'center' }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renovacionesFiltradas.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{ padding: '25px', textAlign: 'center', color: '#777' }}>
+                        No hay proveedores pendientes de actualización (&gt;90 días).
+                      </td>
+                    </tr>
+                  ) : (
+                    renovacionesFiltradas.map(prov => (
+                      <tr key={prov.id} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '10px', color: '#666' }}>
+                          {prov.fecha_registro ? new Date(prov.fecha_registro).toLocaleDateString('es-CL') : 'N/A'}
+                        </td>
+                        <td style={{ padding: '10px' }}>
+                          <strong style={{ color: '#222' }}>{prov.razon_social}</strong><br />
+                          <span style={{ color: '#666', fontSize: '11px' }}>{prov.rut}</span>
+                        </td>
+                        <td style={{ padding: '10px' }}>
+                          <span>{prov.categoria}</span><br />
+                          <span style={{ color: '#666', fontSize: '11px' }}>{prov.subcategoria}</span>
+                        </td>
+                        <td style={{ padding: '10px' }}>
+                          <strong>{prov.nombre_contacto || 'Sin nombre'}</strong><br />
+                          <span style={{ color: '#004A99', fontSize: '11px' }}>{prov.email_principal || 'Sin correo'}</span>
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                            <button 
+                              onClick={() => marcarProveedorActualizado && marcarProveedorActualizado(prov)} 
+                              style={{ padding: '5px 10px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                            >
+                              Actualizado
+                            </button>
+                            <button 
+                              onClick={() => enviarCorreoConfirmacion(prov)} 
+                              style={{ padding: '5px 10px', backgroundColor: '#004A99', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                            >
+                              Enviar Correo
+                            </button>
+                            <button 
+                              onClick={() => abrirEditorProveedor && abrirEditorProveedor(prov)} 
+                              style={{ padding: '5px 10px', backgroundColor: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                            >
+                              Editar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '30px' }}>
         <div style={{ backgroundColor: '#004A99', color: 'white', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
           <h3 style={{ margin: 0, fontSize: '14px', textTransform: 'uppercase' }}>Total Proveedores</h3>
@@ -92,7 +220,12 @@ export default function DashboardStats({ proveedores, proveedoresAprobados, cate
           <h3 style={{ margin: '0', fontSize: '14px', textTransform: 'uppercase' }}>Aprobados en Base</h3>
           <p style={{ margin: '10px 0 0 0', fontSize: '36px', fontWeight: 'bold' }}>{proveedoresAprobados.length}</p>
         </div>
-        <div style={{ backgroundColor: '#ffc107', color: '#333', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
+        {/* TARJETA INTERACTIVA: Al hacer clic abre el listado de proveedores >90 días */}
+        <div 
+          onClick={() => setMostrarModalRenovacion(true)}
+          title="Haz clic para revisar los proveedores que requieren actualización"
+          style={{ backgroundColor: '#ffc107', color: '#333', padding: '20px', borderRadius: '8px', textAlign: 'center', cursor: 'pointer' }}
+        >
           <h3 style={{ margin: '0', fontSize: '14px', textTransform: 'uppercase' }}>Requieren Actualización (&gt;90 días)</h3>
           <p style={{ margin: '10px 0 0 0', fontSize: '36px', fontWeight: 'bold' }}>{stats.renovaciones.length}</p>
         </div>

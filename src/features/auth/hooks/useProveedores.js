@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { cargarProveedoresService, verificarDuplicadoProveedorService, insertarProveedoresService, actualizarProveedorService, cambiarEstadoProveedorService, eliminarProveedorService } from '../../../services/supabase/proveedoresService';
+import { cargarProveedoresService, verificarDuplicadoProveedorService, insertarProveedoresService, actualizarProveedorService, cambiarEstadoProveedorService, marcarProveedorActualizadoService, eliminarProveedorService } from '../../../services/supabase/proveedoresService';
 import { registrarAuditoriaProvService } from '../../../services/supabase/auditoriaYAdminService';
 import { validarRUT, sanitizarYCapitalizar } from '../../../utils/formato';
 
-// Función auxiliar interna para comparar textos sin perder registros por tildes, mayúsculas o espacios
 const normalizarComparacion = (texto) => {
   if (!texto) return '';
   return texto
@@ -37,7 +36,6 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
   const [filtroGestionSub, setFiltroGestionSub] = useState('');
   const [filtroGestionZona, setFiltroGestionZona] = useState('');
 
-  // Estados de filtros exclusivos para la pestaña de Pendientes
   const [filtroPendienteRutRazon, setFiltroPendienteRutRazon] = useState('');
   const [filtroPendienteCatSubcat, setFiltroPendienteCatSubcat] = useState('');
 
@@ -62,6 +60,24 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     if(!window.confirm("¿Rechazar y ELIMINAR a este proveedor?")) return;
     const { error } = await eliminarProveedorService(prov.id);
     if (!error) { await registrarAuditoriaProvService(prov.rut, prov.razon_social, 'Eliminación', `Proveedor eliminado del sistema`, usuarioActual.usuario); cargarProveedores(); }
+  };
+
+  // NUEVA FUNCIÓN: Marca al proveedor como actualizado y lo retira de la ventana de >90 días
+  const marcarProveedorActualizado = async (prov) => {
+    if(!window.confirm(`¿Confirmar que los datos de "${prov.razon_social}" (${prov.categoria} - ${prov.subcategoria}) están actualizados?`)) return;
+    const { error } = await marcarProveedorActualizadoService(prov.id, new Date().toISOString());
+    if (!error) {
+      await registrarAuditoriaProvService(
+        prov.rut,
+        prov.razon_social,
+        'Actualización >90 días',
+        `Validado como actualizado (${prov.categoria} -> ${prov.subcategoria})`,
+        usuarioActual?.usuario || 'Admin'
+      );
+      cargarProveedores();
+    } else {
+      alert("⚠️ Ocurrió un error al marcar el registro como actualizado.");
+    }
   };
 
   const abrirEditorProveedor = (prov) => {
@@ -98,7 +114,6 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     else {
       nuevasCat = nuevasCat.filter(c => c !== cat);
       const subsParaRemover = categoriasDinamicas[cat] || [];
-      // Solo removemos la subcategoría si no pertenece a otra categoría que siga marcada
       nuevasSub = nuevasSub.filter(s => {
         if (!subsParaRemover.includes(s)) return true;
         return nuevasCat.some(otraCat => (categoriasDinamicas[otraCat] || []).includes(s));
@@ -138,7 +153,6 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     const registrosAInsertar = [];
     const duplicadosEncontrados = [];
 
-    // Buscamos la categoría padre exclusivamente dentro de las categorías seleccionadas por el proveedor
     formData.subcategoria.forEach(sub => {
       const categoriasCoincidentes = formData.categoria.filter(cat => (categoriasDinamicas[cat] || []).includes(sub));
       const categoriasFinales = categoriasCoincidentes.length > 0 
@@ -183,10 +197,8 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
 
   const toggleSeleccion = (id) => setSeleccionados(seleccionados.includes(id) ? seleccionados.filter(i => i !== id) : [...seleccionados, id]);
   
-  // Garantiza que ningún proveedor aprobado quede excluido por espacios o mayúsculas en el campo estado
   const proveedoresAprobados = proveedores.filter(p => normalizarComparacion(p.estado) === 'aprobado');
 
-  // Filtrado exacto normalizado para Exportar Aprobados
   const proveedoresFiltrados = proveedoresAprobados.filter(p => {
     const rutProv = normalizarComparacion(p.rut);
     const nombreProv = `${normalizarComparacion(p.nombre_fantasia)} ${normalizarComparacion(p.razon_social)}`;
@@ -220,7 +232,6 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     return matchNombre && matchCat && matchSub && matchZona;
   });
 
-  // Filtra exclusivamente los pendientes usando los inputs múltiples
   const proveedoresPendientesFiltrados = proveedores.filter(p => {
     if (normalizarComparacion(p.estado) !== 'pendiente') return false;
     const infoIdentidad = `${normalizarComparacion(p.rut)} ${normalizarComparacion(p.razon_social)} ${normalizarComparacion(p.nombre_fantasia)}`;
@@ -244,8 +255,8 @@ export const useProveedores = (usuarioActual, categoriasDinamicas) => {
     filtroPendienteCatSubcat, setFiltroPendienteCatSubcat,
     proveedoresPendientesFiltrados,
 
-    aprobarProveedor, revocarProveedor, rechazarProveedor, abrirEditorProveedor,
-    guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
+    aprobarProveedor, revocarProveedor, rechazarProveedor, marcarProveedorActualizado,
+    abrirEditorProveedor, guardarEdicionProveedor, manejarCambioZona, manejarCambioCategoria,
     manejarCambioSubcategoria, manejarEnvioRegistro, toggleSeleccion,
     proveedoresAprobados, proveedoresFiltrados, toggleSeleccionarTodo, proveedoresGestionFiltrados
   };

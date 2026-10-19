@@ -12,7 +12,7 @@ export const cargarProveedoresService = async () => {
       .from('proveedores')
       .select('*')
       .order('fecha_registro', { ascending: false })
-      .order('id', { ascending: true }) // Desempate determinista para no omitir ni duplicar filas entre páginas de 1000
+      .order('id', { ascending: true })
       .range(desde, hasta);
 
     if (error) {
@@ -66,6 +66,14 @@ export const cambiarEstadoProveedorService = async (id, estado, aprobado_por = n
   if (aprobado_por !== null) payload.aprobado_por = aprobado_por;
   if (fecha_aprobacion !== null) payload.fecha_aprobacion = fecha_aprobacion;
   return await supabase.from('proveedores').update(payload).eq('id', id);
+};
+
+// NUEVO SERVICIO: Renueva la fecha del registro para sacarlo de la bandeja de >90 días
+export const marcarProveedorActualizadoService = async (id, fechaActual) => {
+  return await supabase
+    .from('proveedores')
+    .update({ fecha_registro: fechaActual })
+    .eq('id', id);
 };
 
 export const eliminarProveedorService = async (id) => {
