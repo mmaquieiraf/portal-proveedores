@@ -83,47 +83,74 @@ export default async function handler(req, res) {
     };
     // --------------------------------------------------------
 
-    // Modelos vigentes soportados en v1beta para generateContent
-    const modelosDisponibles = [
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-2.5-pro'
+    // Lista encabezada por gemini-3.8-flash según requerimiento oficial de la API
+    let modelosDisponibles = [
+      'gemini-3.8-flash',
+      'gemini-3.8-flash-lite',
+      'gemini-3.8-pro',
+      'gemini-3.5-flash'
     ];
+
+    // Función auxiliar que intenta generar contenido con un modelo específico
+    const intentarGeneracion = async (nombreModelo) => {
+      const idLimpio = nombreModelo.replace(/^models\//, '');
+      const respuestaApi = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${idLimpio}:generateContent?key=${serverApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finalPayload)
+      });
+
+      const datosRecibidos = await respuestaApi.json();
+
+      if (!respuestaApi.ok) {
+        const msg = datosRecibidos.error?.message || `Error HTTP ${respuestaApi.status}`;
+        throw new Error(msg);
+      }
+
+      const textoGenerado = datosRecibidos?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!textoGenerado) {
+        throw new Error('Respuesta vacía del modelo.');
+      }
+
+      return textoGenerado;
+    };
 
     let erroresPorModelo = [];
 
     for (const modelo of modelosDisponibles) {
       try {
-        const respuestaApi = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${serverApiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(finalPayload)
-        });
-        
-        const datosRecibidos = await respuestaApi.json();
-
-        if (respuestaApi.status === 429 || respuestaApi.status === 503) {
-          erroresPorModelo.push(`${modelo}: saturado (${respuestaApi.status})`);
-          continue;
-        }
-
-        if (!respuestaApi.ok) {
-          const msg = datosRecibidos.error?.message || `Error HTTP ${respuestaApi.status}`;
-          erroresPorModelo.push(`${modelo}: ${msg}`);
-          continue;
-        }
-
-        const textoGenerado = datosRecibidos?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!textoGenerado) {
-          erroresPorModelo.push(`${modelo}: respuesta vacía`);
-          continue;
-        }
-        
-        return res.status(200).json({ text: textoGenerado });
+        const texto = await intentarGeneracion(modelo);
+        return res.status(200).json({ text: texto });
       } catch (errInterno) {
         erroresPorModelo.push(`${modelo}: ${errInterno.message}`);
-        console.error(errInterno);
+        console.error(`Intento fallido con ${modelo}:`, errInterno.message);
       }
+    }
+
+    // Respaldo automático: consulta ListModels en vivo si Google rota los nombres de versión
+    try {
+      const listaResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${serverApiKey}`);
+      if (listaResp.ok) {
+        const listaData = await listaResp.json();
+        const modelosHabilitados = (listaData.models || [])
+          .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+          .map(m => m.name.replace(/^models\//, ''))
+          .filter(name => name.includes('gemini') && !modelosDisponibles.includes(name));
+
+        // Priorizamos cualquier variante flash disponible en la cuenta
+        modelosHabilitados.sort((a, b) => (b.includes('flash') ? 1 : 0) - (a.includes('flash') ? 1 : 0));
+
+        for (const modeloDinamico of modelosHabilitados.slice(0, 3)) {
+          try {
+            const texto = await intentarGeneracion(modeloDinamico);
+            return res.status(200).json({ text: texto });
+          } catch (errDinamico) {
+            erroresPorModelo.push(`${modeloDinamico}: ${errDinamico.message}`);
+          }
+        }
+      }
+    } catch (errList) {
+      console.error('Error consultando ListModels de respaldo:', errList);
     }
 
     throw new Error(erroresPorModelo[0] || "Alta demanda en servidores gratuitos.");
