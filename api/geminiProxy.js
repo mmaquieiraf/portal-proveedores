@@ -45,9 +45,11 @@ export default async function handler(req, res) {
     const contents = payload.contents[0];
     const resolvedParts = [];
 
-    for (const part of contents.parts) {
+    for (const part of (contents.parts || [])) {
       if (part.text) {
-        resolvedParts.push(part);
+        resolvedParts.push({ text: part.text });
+      } else if (part.inlineData) {
+        resolvedParts.push({ inlineData: part.inlineData });
       } else if (part.storagePath) {
         // 1. Descargamos el archivo pesado desde Supabase
         const { data: fileData, error: downloadError } = await supabaseClient.storage.from('archivos_ia').download(part.storagePath);
@@ -63,14 +65,32 @@ export default async function handler(req, res) {
       }
     }
 
+    // Normalización segura de systemInstruction para la API REST v1beta de Gemini
+    let normalizedSystemInstruction = undefined;
+    if (payload.systemInstruction) {
+      if (typeof payload.systemInstruction === 'string') {
+        normalizedSystemInstruction = { parts: [{ text: payload.systemInstruction }] };
+      } else if (payload.systemInstruction.parts) {
+        normalizedSystemInstruction = payload.systemInstruction;
+      } else if (payload.systemInstruction.text) {
+        normalizedSystemInstruction = { parts: [{ text: payload.systemInstruction.text }] };
+      }
+    }
+
     const finalPayload = {
-      systemInstruction: payload.systemInstruction,
-      contents: [{ parts: resolvedParts }]
+      ...(normalizedSystemInstruction ? { systemInstruction: normalizedSystemInstruction } : {}),
+      contents: [{ role: 'user', parts: resolvedParts }]
     };
     // --------------------------------------------------------
 
-    const modelosDisponibles = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-    let ultimoError = '';
+    // Modelos vigentes soportados en v1beta para generateContent
+    const modelosDisponibles = [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.5-pro'
+    ];
+
+    let erroresPorModelo = [];
 
     for (const modelo of modelosDisponibles) {
       try {
@@ -81,20 +101,32 @@ export default async function handler(req, res) {
         });
         
         const datosRecibidos = await respuestaApi.json();
-        if (respuestaApi.status === 429) continue; 
+
+        if (respuestaApi.status === 429 || respuestaApi.status === 503) {
+          erroresPorModelo.push(`${modelo}: saturado (${respuestaApi.status})`);
+          continue;
+        }
+
         if (!respuestaApi.ok) {
-          ultimoError = datosRecibidos.error?.message || `Error HTTP ${respuestaApi.status}`;
+          const msg = datosRecibidos.error?.message || `Error HTTP ${respuestaApi.status}`;
+          erroresPorModelo.push(`${modelo}: ${msg}`);
+          continue;
+        }
+
+        const textoGenerado = datosRecibidos?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!textoGenerado) {
+          erroresPorModelo.push(`${modelo}: respuesta vacía`);
           continue;
         }
         
-        return res.status(200).json({ text: datosRecibidos.candidates[0].content.parts[0].text });
+        return res.status(200).json({ text: textoGenerado });
       } catch (errInterno) {
-        ultimoError = errInterno.message;
+        erroresPorModelo.push(`${modelo}: ${errInterno.message}`);
         console.error(errInterno);
       }
     }
 
-    throw new Error(ultimoError || "Alta demanda en servidores gratuitos.");
+    throw new Error(erroresPorModelo[0] || "Alta demanda en servidores gratuitos.");
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
