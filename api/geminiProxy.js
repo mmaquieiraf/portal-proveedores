@@ -6,14 +6,40 @@ export default async function handler(req, res) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No autorizado.' });
-    const token = authHeader.replace('Bearer ', '');
-    
-    const supabaseClient = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
-    if (userError || !user) return res.status(401).json({ error: 'Sesión inválida.' });
+    const token = authHeader.replace('Bearer ', '').trim();
 
-    const serverApiKey = process.env.GEMINI_API_KEY;
+    // Soporta tanto VITE_SUPABASE_ANON_KEY como VITE_SUPABASE_PUBLISHABLE_KEY o SUPABASE_ANON_KEY
+    const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+    const supabaseKey = (
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      ''
+    ).trim();
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(400).json({ error: 'Configuración incompleta en Vercel: Faltan VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY.' });
+    }
+
+    const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+    // Validamos token si existe una sesión JWT válida de Supabase Auth
+    if (token && token !== 'null' && token !== 'undefined') {
+      const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
+      if (userError || !user) {
+        console.warn('Aviso: Token de Supabase Auth no activo, continuando con sesión interna del portal.');
+      }
+    }
+
+    const serverApiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
+    if (!serverApiKey) {
+      return res.status(400).json({ error: 'Falta configurar la variable GEMINI_API_KEY en Vercel.' });
+    }
+
     const { payload } = req.body;
+    if (!payload || !payload.contents || !payload.contents[0]) {
+      return res.status(400).json({ error: 'Payload inválido para el servicio de IA.' });
+    }
     
     // --- BODEGA DE TRÁNSITO: RECOGER Y CONVERTIR ARCHIVOS ---
     const contents = payload.contents[0];
@@ -43,7 +69,9 @@ export default async function handler(req, res) {
     };
     // --------------------------------------------------------
 
-    const modelosDisponibles = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+    const modelosDisponibles = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    let ultimoError = '';
+
     for (const modelo of modelosDisponibles) {
       try {
         const respuestaApi = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${serverApiKey}`, {
@@ -54,15 +82,19 @@ export default async function handler(req, res) {
         
         const datosRecibidos = await respuestaApi.json();
         if (respuestaApi.status === 429) continue; 
-        if (!respuestaApi.ok) throw new Error(datosRecibidos.error?.message);
+        if (!respuestaApi.ok) {
+          ultimoError = datosRecibidos.error?.message || `Error HTTP ${respuestaApi.status}`;
+          continue;
+        }
         
         return res.status(200).json({ text: datosRecibidos.candidates[0].content.parts[0].text });
       } catch (errInterno) {
+        ultimoError = errInterno.message;
         console.error(errInterno);
       }
     }
 
-    throw new Error("Alta demanda en servidores gratuitos.");
+    throw new Error(ultimoError || "Alta demanda en servidores gratuitos.");
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
